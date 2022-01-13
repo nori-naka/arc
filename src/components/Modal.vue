@@ -18,12 +18,14 @@
 </template>
 
 <script>
+import { uuidv4 } from './uuidv4';
 export default {
   props: [ "polygon_props" ],
   methods: {
     bt_ok() {
       this.$emit("hide_modal", {
         id: this.polygon_props.id,
+        msg_id: uuidv4(),
         value: this.$refs.msg.value
       });
       this.$refs.msg.value = "";
@@ -31,6 +33,7 @@ export default {
     bt_cancel() {
       this.$emit("hide_modal", {
         id: null,
+        msg_id: null,
         value: null
       });
       this.$refs.msg.value = "";

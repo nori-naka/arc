@@ -67,6 +67,7 @@ export default {
           layer.openPopup();
 
           this.features_obj[ev.id].properties.message = ev.value;
+          this.features_obj[ev.id].properties.msg_id = ev.msg_id;
           this.update_featureCollection();
 
           this.polygon_props = {};
@@ -125,9 +126,11 @@ export default {
 
           const feature_geojson = _polygon.toGeoJSON();
           const id = uuidv4();
+          const msg_id = uuidv4();
           _polygon.id = id;
           this.polygons[id] = { layer: _polygon, markers: [ ...this.polygon_marker ] };
           feature_geojson.properties["id"] = id;
+          feature_geojson.properties["msg_id"] = msg_id;
           this.features_obj[id] = feature_geojson;
 
           // 最後なので、後片付け
