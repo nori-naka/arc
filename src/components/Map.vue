@@ -106,9 +106,8 @@ export default {
       }).addLayer(osmLayer);
 
       this.map.on("click", ev => {
-        // 最後
         // 最後にpt追加された場所が最初のpt追加した場所に近いか（画面PXで10以内）を判断してpolygonを閉じる
-        if (this.polygon_pt.length > 0 &&  ev.layerPoint.distanceTo(this.polygon_pt[0]) < 10) {
+        if (this.polygon_pt.length > 0 &&  ev.layerPoint.distanceTo(this.polygon_pt[0]) < 30) {
           const _polygon = L.polygon(this.polygon_coords).addTo(this.map).on("preclick", ev => {
             console.log("---------EV----------");
             console.log(ev);
@@ -123,12 +122,17 @@ export default {
               }
             }
           });
+          // polygonを閉じたので、markerは削除する
+          this.polygon_marker.forEach(marker => {
+            this.map.removeLayer(marker);
+          });
+
 
           const feature_geojson = _polygon.toGeoJSON();
           const id = uuidv4();
           const msg_id = uuidv4();
           _polygon.id = id;
-          this.polygons[id] = { layer: _polygon, markers: [ ...this.polygon_marker ] };
+          this.polygons[id] = _polygon;
           feature_geojson.properties["id"] = id;
           feature_geojson.properties["msg_id"] = msg_id;
           this.features_obj[id] = feature_geojson;
@@ -213,10 +217,7 @@ export default {
       }
     },
     delete_polygon(id) {
-      this.map.removeLayer(this.polygons[id].layer);
-      this.polygons[id].markers.forEach(marker => {
-        this.map.removeLayer(marker);
-      });
+      this.map.removeLayer(this.polygons[id]);
       delete this.polygons[id];
       delete this.features_obj[id];
       this.update_featureCollection();
