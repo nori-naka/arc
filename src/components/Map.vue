@@ -1,6 +1,11 @@
 <template>
   <div>
-    <div class="map_layout" id="map" />
+    <div class="map_layout">
+      <div  class="map" id="map"></div>
+      <div v-show="polygon_pt.length > 0" @click="remove_point" class="btn_menu">
+        <img :src="img_back" class="img_back" />
+      </div>
+    </div>
     <modal v-show="show_modal_flag" @hide_modal="hide_modal" :polygon_props="polygon_props" />
   </div>
 </template>
@@ -11,7 +16,7 @@ import L from "leaflet";
 import Modal from "./Modal.vue";
 import { uuidv4 } from "./uuidv4";
 
-const FEATURECOLLECTION = { "type": "FeatureCollection", "features": []};
+// const FEATURECOLLECTION = { "type": "FeatureCollection", "features": []};
 const GEO_URL = "https://lma1.herokuapp.com/geojson";
 // const GEO_URL = "http://localhost:3000/geojson";
 
@@ -31,23 +36,21 @@ export default {
       polygons: {},
       // area_events: null,
       pt_mode: true,
+      featureCollection_json: {},
       features_obj: {},
       show_modal_flag: false,
-      polygon_props: {}
+      polygon_props: {},
+      img_back: require("../assets/arrow_left.png")
     }
   },
   async mounted() {
     // this.area_events = L.featureGroup();
     this.init_map();
-    this.map.on("keypress", ev => {
-      console.log(ev)
-    });
     this.map.on("keydown", ev => {
       if (ev.originalEvent.key == "Escape") {
         ev.originalEvent.preventDefault();
-        // console.log(ev.originalEvent);
         console.log("Escape");
-        this.cancel_pt();
+        this.remove_point();
       }
     });
   },
@@ -75,11 +78,19 @@ export default {
         }
       });
     },
-    async update_featureCollection() {
-      // 合体
-      FEATURECOLLECTION.features = Object.values(this.features_obj);
-      console.log(FEATURECOLLECTION);
-      this.$emit("update_area", FEATURECOLLECTION);
+    async update_featureCollection(data) {
+      if (data && data.type == "FeatureCollection") {
+        this.featureCollection_json = data;
+      } else {
+        // 各featureを合体
+        // FEATURECOLLECTION.features = Object.values(this.features_obj);
+        this.featureCollection_json = {
+          "type": "FeatureCollection", 
+          "features": [ ...Object.values(this.features_obj) ]
+        }
+      }
+      console.log(this.featureCollection_json);
+      this.$emit("update_area", this.featureCollection_json);
 
       const res = await fetch(GEO_URL, {
         method: "POST",
@@ -87,23 +98,40 @@ export default {
           "Accept": "application/json",
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(FEATURECOLLECTION)
+        body: JSON.stringify(this.featureCollection_json)
       });
       if (res.ok) {
         console.log("POST OK");
       }
     },
-    init_map() {
+    async init_map() {
       navigator.geolocation.watchPosition(this.geo_success, this.geo_error);
 
       const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
         attribution: '© <a href="http://osm.org/copyright">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>',
         opacity: 0.5
       });
+      // 地図読み込み
       this.map = L.map("map", {
         center: L.latLng( 35.6825, 139.752778), 
         zoom: 15
       }).addLayer(osmLayer);
+
+      // サーバの現状のgeoJSONの読み込み
+      const res = await fetch(GEO_URL);
+      const geo_data = await res.json();
+      this.update_featureCollection(geo_data);
+      L.geoJSON(geo_data, {
+        onEachFeature: (feature, layer) => {
+          console.log(layer);
+          const id = feature.properties.id;
+          layer.id = id;
+          this.polygons[id] = layer;
+          this.features_obj[id] = feature;
+        }
+      }).bindPopup( layer => {
+        return layer.feature.properties.message;
+      }).addTo(this.map);
 
       this.map.on("click", ev => {
         // 最後にpt追加された場所が最初のpt追加した場所に近いか（画面PXで10以内）を判断してpolygonを閉じる
@@ -143,25 +171,13 @@ export default {
           this.polygon_pt = [];
         } else {
           if (this.pt_mode) {
-            this.draw_point(ev);
-            // const coords = this.draw_point(ev);
-            // this.polygon_coords.push(coords);
-            // this.polygon_pt.push(ev.layerPoint);
+            this.add_point(ev);
           } else {
             this.pt_mode = true;
           }
         }
         console.log(this.polygon_pt);
       });
-    },
-    cancel_pt() {
-      if (this.polygon_pt.length > 0 && this.polygon_coords.length > 0) {
-        
-        this.polygon_coords.pop();
-        this.polygon_pt.pop();
-        const marker = this.polygon_marker.pop();
-        this.map.removeLayer(marker);
-      }
     },
     async geo_success(pos) {
       this.coords = {
@@ -194,7 +210,7 @@ export default {
     geo_error(error) {
       console.log(`GEO_ERROR: ${error.message}`);
     },
-    draw_point(ev) {
+    add_point(ev) {
       console.log(ev);
       const marker = L.marker(ev.latlng, {
         icon: L.divIcon({
@@ -206,7 +222,14 @@ export default {
       this.polygon_marker.push(marker);
       this.polygon_coords.push(ev.latlng);
       this.polygon_pt.push(ev.layerPoint);
-      // return ev.latlng;
+    },
+    remove_point() {
+      if (this.polygon_pt.length > 0 && this.polygon_coords.length > 0) {
+        this.polygon_coords.pop();
+        this.polygon_pt.pop();
+        const marker = this.polygon_marker.pop();
+        this.map.removeLayer(marker);
+      }
     },
     edit_polygon(id) {
       this.show_modal_flag = true;
@@ -233,9 +256,32 @@ export default {
   left: 0px;
   height: 50vh;
   width: 100%;
+}
+.map {
+  position: relative;
+  /* top: 0px;
+  left: 0px; */
+  height: 100%;
+  width: 100%;
   z-index: 1;
 }
-
+.btn_menu {
+  display: flex;
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  width: 50px;
+  height: 50px;
+  background-color: darkturquoise;
+  border-radius: 50%;
+  z-index: 2;
+  cursor: pointer;
+}
+.img_back {
+  width: 60%;
+  height: 60%;
+  margin: auto;
+}
 .point_marker {
   width: 10px;
   height: 10px;
